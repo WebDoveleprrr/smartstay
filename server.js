@@ -1,4 +1,6 @@
 require('dotenv').config();
+const sgMail = require('@sendgrid/mail');
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
@@ -9,7 +11,6 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,21 +32,18 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/smartstay'
 const ADMIN_EMAIL = 'bikkinarohitchowdary@gmail.com';
 const ADMIN_PASSWORD = 'Rohit@1234';
 
-// ── Mailer ────────────────────────────────────────────────────────
-const mailer = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-  auth: {
-    user: MAIL_USER,
-    pass: MAIL_PASS
-  }
-});
-function sendMail(to, subject, html, attachments = []) {
-  mailer.sendMail({ from: `"Smart Stay" <${MAIL_USER}>`, to, subject, html, attachments }, err => {
-    if (err) console.error('❌ Mail error:', err.message);
-    else console.log(`📧 Email sent to ${to}`);
-  });
+function sendMail(to, subject, html) {
+  const msg = {
+    to,
+    from: process.env.MAIL_USER, // must be verified in SendGrid
+    subject,
+    html,
+  };
+
+  sgMail
+    .send(msg)
+    .then(() => console.log(`📧 Email sent to ${to}`))
+    .catch(err => console.error('❌ Mail error:', err.message));
 }
 
 // ── Middleware ────────────────────────────────────────────────────

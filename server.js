@@ -33,8 +33,13 @@ const ADMIN_PASSWORD = 'Rohit@1234';
 
 // ── Mailer ────────────────────────────────────────────────────────
 const mailer = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: MAIL_USER, pass: MAIL_PASS }
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
+  auth: {
+    user: MAIL_USER,
+    pass: MAIL_PASS
+  }
 });
 function sendMail(to, subject, html, attachments = []) {
   mailer.sendMail({ from: `"Smart Stay" <${MAIL_USER}>`, to, subject, html, attachments }, err => {

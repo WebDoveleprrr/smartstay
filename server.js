@@ -34,8 +34,8 @@ const ADMIN_PASSWORD = 'Rohit@1234';
 // ── Mailer ────────────────────────────────────────────────────────
 const mailer = nodemailer.createTransport({
   host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
+  port: 465,
+  secure: true,
   auth: {
     user: MAIL_USER,
     pass: MAIL_PASS

@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const sgMail = require('@sendgrid/mail');
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 const express = require('express');
@@ -24,7 +24,7 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 //  Replace with your MongoDB Atlas connection string when deploying
 //  OR keep as-is for local MongoDB
 // ══════════════════════════════════════════════════════════════════
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://bikkinarohitchowdary_db_user:Rohit@1234@cluster0.n1qszgd.mongodb.net/smartstay';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://bikkinarohitchowdary_db_user:Rohit%401234@cluster0.n1qszgd.mongodb.net/smartstay';
 
 // ── Admin Credentials ─────────────────────────────────────────────
 const ADMIN_EMAIL = 'bikkinarohitchowdary@gmail.com';

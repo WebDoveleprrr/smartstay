@@ -15,35 +15,85 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ══════════════════════════════════════════════════════════════════
-// ⚠️  CONFIGURE YOUR GMAIL BELOW  ⚠️
-// ══════════════════════════════════════════════════════════════════
-const MAIL_USER = process.env.MAIL_USER || 'brohitchowdary5@gmail.com';
-const MAIL_PASS = process.env.MAIL_PASS || 'nifbnpouacvmxuot';
+// ✅ uploadsDir FIRST
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 // ══════════════════════════════════════════════════════════════════
 // ⚠️  MONGODB CONNECTION STRING  ⚠️
 //  Replace with your MongoDB Atlas connection string when deploying
 //  OR keep as-is for local MongoDB
 // ══════════════════════════════════════════════════════════════════
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/smartstay';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://bikkinarohitchowdary_db_user:Rohit@1234@cluster0.n1qszgd.mongodb.net/smartstay';
 
 // ── Admin Credentials ─────────────────────────────────────────────
 const ADMIN_EMAIL = 'bikkinarohitchowdary@gmail.com';
 const ADMIN_PASSWORD = 'Rohit@1234';
 
-function sendMail(to, subject, html) {
+function sendMail(to, subject, textContent, attachments = [], status = null) {
+  let statusHtml = '';
+  if (status) {
+    statusHtml = `
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 20px; background: #f9fafb; padding: 10px; border-radius: 6px;">
+      <tr>
+        <td style="width: 100px;"><strong>Status:</strong></td>
+        <td style="color:${status === 'Closed' ? 'green' : 'orange'}; font-weight: bold;">
+          ${status}
+        </td>
+      </tr>
+    </table>`;
+  }
+
+  const htmlContent = `
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 20px; font-family: 'Inter', Helvetica, Arial, sans-serif;">
+  <tr>
+    <td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+        <tr>
+          <td style="background: linear-gradient(135deg, #f97316, #10b981, #3b82f6); padding: 24px; text-align: center; color: #ffffff;">
+            <h2 style="margin: 0; font-size: 22px; font-weight: 700;">Smart Stay System</h2>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 32px; color: #374151; font-size: 15px; line-height: 1.6;">
+            ${textContent.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>')}
+            ${statusHtml}
+          </td>
+        </tr>
+        <tr>
+          <td style="background-color: #f8fafc; padding: 20px; text-align: center; font-size: 13px; color: #64748b; border-top: 1px solid #e2e8f0;">
+            This is an automated email from Smart Stay.<br>Please do not reply.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>`;
+
   const msg = {
     to,
-    from: process.env.MAIL_USER, // must be verified in SendGrid
+    from: {
+      name: 'Smart Stay',
+      email: process.env.EMAIL_USER
+    },
     subject,
-    html,
+    text: textContent + '\n\nThis is an automated email from Smart Stay',
+    html: htmlContent,
+    trackingSettings: {
+      clickTracking: { enable: false, enableText: false },
+      openTracking: { enable: false }
+    }
   };
 
-  sgMail
-    .send(msg)
-    .then(() => console.log(`📧 Email sent to ${to}`))
-    .catch(err => console.error('❌ Mail error:', err.message));
+  if (attachments && attachments.length > 0) {
+    msg.attachments = attachments;
+  }
+
+  setImmediate(() => {
+    sgMail.send(msg)
+      .then(() => console.log(`📧 Email sent to ${to}`))
+      .catch(err => console.error("❌ ERROR:", err.response?.body || err.message));
+  });
 }
 
 // ── Middleware ────────────────────────────────────────────────────
@@ -51,7 +101,7 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname)));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(uploadsDir));
 
 // ── MongoDB Connection ────────────────────────────────────────────
 mongoose.connect(MONGO_URI)
@@ -70,14 +120,11 @@ app.use(session({
   secret: 'smartstay_secret_2024_hostel',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({ mongoUrl: MONGO_URI, ttl: 3600 }),
-  cookie: { secure: false, maxAge: 60 * 60 * 1000 }
+  store: MongoStore.create({ mongoUrl: MONGO_URI, ttl: 86400 }),
+  cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 }
 }));
 
 // ── File Uploads ──────────────────────────────────────────────────
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
@@ -87,11 +134,13 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB Max Size
   fileFilter: (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
-    if (allowed.includes(file.mimetype)) cb(null, true);
-    else cb(Object.assign(new Error('Only images allowed'), { code: 'INVALID_TYPE' }));
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(Object.assign(new Error('Only images allowed'), { code: 'INVALID_TYPE' }));
+    }
   }
 });
 
@@ -146,7 +195,7 @@ const lostFoundSchema = new mongoose.Schema({
   item_name: { type: String, required: true },
   description: { type: String, default: '' },
   location: { type: String, default: '' },
-  image_path: { type: String, default: null },
+  image: { type: String, default: null },
   status: { type: String, default: 'Open' },
   matched_id: { type: String, default: null },
   created_at: { type: Number, default: () => Math.floor(Date.now() / 1000) }
@@ -206,30 +255,24 @@ app.post('/api/register', async (req, res) => {
     });
 
     // Send registration confirmation email
-    sendMail(
-      user.email,
-      'Welcome to Smart Stay — Registration Successful 🏨',
-      `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;background:#f9f9f9;border-radius:10px;overflow:hidden;border:1px solid #ddd">
-        <div style="background:linear-gradient(135deg,#c44b1a,#e8960a);padding:24px;text-align:center">
-          <h1 style="color:#fff;margin:0;font-size:1.6rem">🏨 Smart Stay</h1>
-          <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:0.9rem">Hostel Management System</p>
-        </div>
-        <div style="padding:28px">
-          <h2 style="color:#333;margin-top:0">Welcome, ${user.name}! 🎉</h2>
-          <p style="color:#555">Your Smart Stay account has been created successfully.</p>
-          <table style="width:100%;border-collapse:collapse;margin:16px 0">
-            <tr style="background:#fff3e0"><td style="padding:10px 14px;font-weight:700;color:#c44b1a;border:1px solid #ffe0b2;width:35%">Full Name</td><td style="padding:10px 14px;border:1px solid #ffe0b2;color:#333">${user.name}</td></tr>
-            <tr><td style="padding:10px 14px;font-weight:700;color:#c44b1a;border:1px solid #ffe0b2">Email</td><td style="padding:10px 14px;border:1px solid #ffe0b2;color:#333">${user.email}</td></tr>
-            <tr style="background:#fff3e0"><td style="padding:10px 14px;font-weight:700;color:#c44b1a;border:1px solid #ffe0b2">Block</td><td style="padding:10px 14px;border:1px solid #ffe0b2;color:#333">${block || '—'}</td></tr>
-            <tr><td style="padding:10px 14px;font-weight:700;color:#c44b1a;border:1px solid #ffe0b2">Room</td><td style="padding:10px 14px;border:1px solid #ffe0b2;color:#333">${room || '—'}</td></tr>
-            <tr style="background:#fff3e0"><td style="padding:10px 14px;font-weight:700;color:#c44b1a;border:1px solid #ffe0b2">Phone</td><td style="padding:10px 14px;border:1px solid #ffe0b2;color:#333">${phone || '—'}</td></tr>
-          </table>
-          <div style="margin-top:20px;padding:14px;background:#e8f5e9;border-radius:8px;border-left:4px solid #4caf50">
-            <p style="margin:0;color:#2e7d32;font-weight:600">✅ You can now log in to your hostel portal.</p>
-          </div>
-        </div>
-      </div>`
-    );
+    sendMail(user.email, "Welcome to Smart Stay",
+      `Hello ${user.name},
+
+Your account has been created successfully.
+You can now login.
+
+- Smart Stay`);
+
+    sendMail(ADMIN_EMAIL, "New User Registered",
+      `New user registered:
+
+Name: ${user.name}
+Email: ${user.email}
+Block: ${user.block}
+Room: ${user.room}
+Phone: ${user.phone}
+
+- Smart Stay`);
 
     res.json({ success: true, message: 'Account created! A confirmation email has been sent. Please login.' });
   } catch (err) {
@@ -244,7 +287,8 @@ app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required.' });
   try {
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    const cleanEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: new RegExp('^' + cleanEmail + '$', 'i') });
     if (!user) return res.status(401).json({ error: 'Invalid email or password.' });
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return res.status(401).json({ error: 'Invalid email or password.' });
@@ -264,21 +308,17 @@ app.post('/api/login', async (req, res) => {
     await User.findByIdAndUpdate(user._id, { otp, otp_expires: expires });
     req.session.pendingUserId = user._id.toString();
 
-    sendMail(
-      user.email,
-      'Your Smart Stay Login OTP 🔐',
-      `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;background:#f9f9f9;border-radius:10px;overflow:hidden;border:1px solid #ddd">
-        <div style="background:linear-gradient(135deg,#020c02,#0a3a0a);padding:24px;text-align:center">
-          <h1 style="color:#00ff41;margin:0;font-family:monospace;font-size:1.4rem">🔐 SMART STAY AUTH</h1>
-        </div>
-        <div style="padding:28px;text-align:center">
-          <p style="color:#555;margin-bottom:8px">Your One-Time Password (OTP) is:</p>
-          <div style="font-size:2.8rem;font-weight:900;color:#c44b1a;letter-spacing:12px;font-family:monospace;background:#fff3e0;padding:18px;border-radius:10px;border:2px dashed #e8960a;margin:16px 0">${otp}</div>
-          <p style="color:#888;font-size:0.82rem">⏱ Valid for <strong>5 minutes</strong> only. Do not share this OTP.</p>
-        </div>
-      </div>`
-    );
+    sendMail(user.email, "Smart Stay Login Code",
+      `Hello ${user.name || 'User'},
 
+Your login code is: ${otp}
+
+Valid for 5 minutes.
+If not you, ignore.
+
+- Smart Stay`);
+
+    // Admin OTP removed per user request
     console.log(`\n🔐 OTP for ${user.email}: ${otp}\n`);
     res.json({ success: true, message: 'OTP sent to your registered email! Check your inbox.' });
   } catch (err) {
@@ -294,8 +334,14 @@ app.post('/api/verify-otp', async (req, res) => {
   try {
     const user = await User.findById(req.session.pendingUserId);
     if (!user) return res.status(500).json({ error: 'Session error.' });
-    if (!user.otp || user.otp !== otp.toString()) return res.status(401).json({ error: 'Invalid OTP.' });
-    if (Date.now() > user.otp_expires) return res.status(401).json({ error: 'OTP expired. Login again.' });
+    // ✅ FIRST check expiry
+    if (!user.otp_expires || Date.now() > user.otp_expires) {
+      return res.status(401).json({ error: 'OTP expired. Login again.' });
+    }
+    // ✅ THEN check correctness
+    if (!user.otp || user.otp !== otp.toString()) {
+      return res.status(401).json({ error: 'Invalid OTP.' });
+    }
     await User.findByIdAndUpdate(user._id, { otp: null, otp_expires: null });
     req.session.userId = user._id.toString();
     req.session.userName = user.name;
@@ -305,6 +351,40 @@ app.post('/api/verify-otp', async (req, res) => {
     res.json({ success: true, name: user.name, role: user.role });
   } catch (err) {
     res.status(500).json({ error: 'OTP verification error.' });
+  }
+});
+
+// RESEND OTP
+app.post('/api/resend-otp', async (req, res) => {
+  try {
+    if (!req.session.pendingUserId) {
+      return res.status(400).json({ error: 'No pending login.' });
+    }
+
+    const user = await User.findById(req.session.pendingUserId);
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    user.otp = generateOTP();
+    user.otp_expires = Date.now() + 5 * 60 * 1000;
+
+    await user.save();
+
+    sendMail(user.email, "Smart Stay Login Verification Code",
+      `Hello ${user.name || 'User'},
+
+You requested a new login code.
+
+Verification Code:
+${user.otp}
+
+This code is valid for 5 minutes.
+If this was not you, please ignore.
+
+- Smart Stay`);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to resend OTP.' });
   }
 });
 
@@ -343,22 +423,27 @@ app.post('/api/services', requireAuth, async (req, res) => {
     });
 
     if (user?.email) {
-      sendMail(user.email, 'Service Request Received — Smart Stay 🔧',
-        `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;background:#f9f9f9;border-radius:10px;overflow:hidden;border:1px solid #ddd">
-          <div style="background:linear-gradient(135deg,#c44b1a,#e8960a);padding:20px 24px">
-            <h2 style="color:#fff;margin:0">🔧 Service Request Received</h2>
-          </div>
-          <div style="padding:24px">
-            <p style="color:#555">Hi <strong>${user.name}</strong>, your service request has been received.</p>
-            <table style="width:100%;border-collapse:collapse;margin:14px 0">
-              <tr style="background:#fff3e0"><td style="padding:9px 14px;font-weight:700;color:#c44b1a;border:1px solid #ffe0b2;width:35%">Category</td><td style="padding:9px 14px;border:1px solid #ffe0b2;color:#333">${category}</td></tr>
-              <tr><td style="padding:9px 14px;font-weight:700;color:#c44b1a;border:1px solid #ffe0b2">Priority</td><td style="padding:9px 14px;border:1px solid #ffe0b2;color:#333">${priority || 'Normal'}</td></tr>
-              <tr style="background:#fff3e0"><td style="padding:9px 14px;font-weight:700;color:#c44b1a;border:1px solid #ffe0b2">Description</td><td style="padding:9px 14px;border:1px solid #ffe0b2;color:#333">${description || '—'}</td></tr>
-              <tr><td style="padding:9px 14px;font-weight:700;color:#c44b1a;border:1px solid #ffe0b2">Status</td><td style="padding:9px 14px;border:1px solid #ffe0b2;color:#e8960a;font-weight:700">Pending</td></tr>
-            </table>
-          </div>
-        </div>`
-      );
+      sendMail(user.email, "Service Request Received",
+        `Hello ${user.name},
+
+Your service request has been submitted.
+
+Category: ${category}
+Description: ${description}
+Priority: ${priority}
+
+We will resolve it soon.
+
+- Smart Stay`);
+
+      sendMail(ADMIN_EMAIL, "New Service Request",
+        `User: ${user.name}
+Email: ${user.email}
+Category: ${category}
+Priority: ${priority}
+Description: ${description}
+
+- Smart Stay`);
     }
     res.json({ success: true, message: 'Service request submitted! Confirmation email sent.', id: svc._id });
   } catch (err) { res.status(500).json({ error: 'Failed to submit.' }); }
@@ -407,22 +492,25 @@ app.post('/api/bookings', requireAuth, async (req, res) => {
 
     const user = await User.findById(req.session.userId);
     if (user?.email) {
-      sendMail(user.email, `Facility Booking Confirmed — ${facility} 🏋️`,
-        `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;background:#f9f9f9;border-radius:10px;overflow:hidden;border:1px solid #ddd">
-          <div style="background:linear-gradient(135deg,#1a6b3a,#2e9e5a);padding:20px 24px">
-            <h2 style="color:#fff;margin:0">🏋️ Facility Booking Confirmed!</h2>
-          </div>
-          <div style="padding:24px">
-            <p style="color:#555">Hi <strong>${user.name}</strong>, your booking is confirmed.</p>
-            <table style="width:100%;border-collapse:collapse;margin:14px 0">
-              <tr style="background:#e8f5e9"><td style="padding:9px 14px;font-weight:700;color:#2e7d32;border:1px solid #c8e6c9;width:35%">Facility</td><td style="padding:9px 14px;border:1px solid #c8e6c9;color:#333">${facility}</td></tr>
-              <tr><td style="padding:9px 14px;font-weight:700;color:#2e7d32;border:1px solid #c8e6c9">Date</td><td style="padding:9px 14px;border:1px solid #c8e6c9;color:#333">${date}</td></tr>
-              <tr style="background:#e8f5e9"><td style="padding:9px 14px;font-weight:700;color:#2e7d32;border:1px solid #c8e6c9">Time Slot</td><td style="padding:9px 14px;border:1px solid #c8e6c9;color:#333">${time_slot}</td></tr>
-              <tr><td style="padding:9px 14px;font-weight:700;color:#2e7d32;border:1px solid #c8e6c9">Status</td><td style="padding:9px 14px;border:1px solid #c8e6c9;color:#4caf50;font-weight:700">✅ Confirmed</td></tr>
-            </table>
-          </div>
-        </div>`
-      );
+      sendMail(user.email, "Booking Confirmed",
+        `Hello ${user.name},
+
+Your booking has been confirmed.
+
+Facility: ${facility}
+Date: ${date}
+Time: ${time_slot}
+
+- Smart Stay`);
+
+      sendMail(ADMIN_EMAIL, "New Booking",
+        `User: ${user.name}
+Email: ${user.email}
+Facility: ${facility}
+Date: ${date}
+Time: ${time_slot}
+
+- Smart Stay`);
     }
     res.json({ success: true, message: `${facility} booked for ${date} at ${time_slot}! Confirmation sent.`, id: booking._id });
   } catch (err) { res.status(500).json({ error: 'Booking failed.' }); }
@@ -467,42 +555,122 @@ app.post('/api/lost-found', requireAuth, (req, res) => {
     if (err) return res.status(400).json({ error: err.message });
     const { type, item_name, description, location } = req.body;
     if (!type || !item_name) return res.status(400).json({ error: 'Type and item name required.' });
-    const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
+    const image = req.file ? req.file.filename : null;
     try {
-      const item = await LostFound.create({
+      let item = await LostFound.create({
         user_id: req.session.userId,
         type,
         item_name,
         description: description || '',
         location: location || '',
-        image_path: imagePath
+        image: image,
+        status: 'Open'
       });
+
+      // AUTO-CLOSE LOGIC: Match Lost & Found dynamically via Candidate Scoring
+      const oppositeType = type === 'Lost' ? 'Found' : 'Lost';
+      const candidates = await LostFound.find({
+        type: oppositeType,
+        item_name: new RegExp('^' + item_name + '$', 'i'),
+        status: { $ne: 'Closed' }
+      });
+
+      if (candidates.length > 0) {
+        let bestCandidate = null;
+        let maxScore = -1;
+        for (const c of candidates) {
+          let score = 0;
+          if (c.image) score += 2; // Stronger match if photo exists
+          if (description && c.description) {
+            const descWords1 = description.toLowerCase().split(/\s+/);
+            const descWords2 = c.description.toLowerCase().split(/\s+/);
+            const common = descWords1.filter(w => descWords2.includes(w) && w.length > 2);
+            score += common.length; // +1 score for each overlapping descriptive keyword
+          }
+          if (location && c.location) {
+            const locWords1 = location.toLowerCase().split(/\s+/);
+            const locWords2 = c.location.toLowerCase().split(/\s+/);
+            const commonLoc = locWords1.filter(w => locWords2.includes(w) && w.length > 2);
+            score += commonLoc.length * 2; // +2 score for matching location words
+          }
+          if (score > maxScore) {
+            maxScore = score;
+            bestCandidate = c;
+          }
+        }
+        if (bestCandidate) {
+          bestCandidate.status = 'Closed';
+          bestCandidate.matched_id = item._id.toString();
+          await bestCandidate.save();
+          item.status = 'Closed';
+          item.matched_id = bestCandidate._id.toString();
+
+          // Send email to the matched user
+          try {
+            const candidateUser = await User.findById(bestCandidate.user_id);
+            if (candidateUser && candidateUser.email) {
+              sendMail(
+                candidateUser.email,
+                "Match Found for Your Item",
+                `Hello ${candidateUser.name},\n\nGreat news! A match was found for your reported ${bestCandidate.type.toLowerCase()} item: ${bestCandidate.item_name}.\n\nThe status has been updated. Please check the portal.`,
+                [],
+                bestCandidate.status
+              );
+            }
+          } catch (err) {
+            console.error('Error sending match email:', err);
+          }
+        }
+      }
+      await item.save();
 
       const user = await User.findById(req.session.userId);
       if (user?.email) {
+        let attachments = [];
+        if (req.file) {
+          try {
+            const base64Str = fs.readFileSync(req.file.path).toString("base64");
+            attachments.push({
+              content: base64Str,
+              filename: req.file.originalname,
+              type: req.file.mimetype,
+              disposition: "attachment"
+            });
+          } catch (e) {
+            console.error("Attachment err:", e);
+          }
+        }
+
         const isLost = type === 'Lost';
-        const attachments = req.file ? [{ filename: req.file.originalname, path: req.file.path }] : [];
-        sendMail(
-          user.email,
-          isLost ? `Lost Item Report Submitted — "${item_name}" 🔍` : `Found Item Report Submitted — "${item_name}" 📦`,
-          `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;background:#f9f9f9;border-radius:10px;overflow:hidden;border:1px solid #ddd">
-            <div style="background:${isLost ? 'linear-gradient(135deg,#c44b1a,#8b1a1a)' : 'linear-gradient(135deg,#1a6b3a,#2e7d32)'};padding:20px 24px">
-              <h2 style="color:#fff;margin:0">${isLost ? '🔍 Lost Item Report Submitted' : '📦 Found Item Report Submitted'}</h2>
-            </div>
-            <div style="padding:24px">
-              <p style="color:#555">Hi <strong>${user.name}</strong>,</p>
-              <p style="color:#555">${isLost ? 'Your lost item report has been submitted.' : 'Thank you for reporting a found item!'}</p>
-              <table style="width:100%;border-collapse:collapse;margin:14px 0">
-                <tr><td style="padding:9px 14px;font-weight:700;border:1px solid #ccc">Type</td><td style="padding:9px 14px;border:1px solid #ccc">${type}</td></tr>
-                <tr><td style="padding:9px 14px;font-weight:700;border:1px solid #ccc">Item</td><td style="padding:9px 14px;border:1px solid #ccc">${item_name}</td></tr>
-                <tr><td style="padding:9px 14px;font-weight:700;border:1px solid #ccc">Location</td><td style="padding:9px 14px;border:1px solid #ccc">${location || '—'}</td></tr>
-                <tr><td style="padding:9px 14px;font-weight:700;border:1px solid #ccc">Description</td><td style="padding:9px 14px;border:1px solid #ccc">${description || '—'}</td></tr>
-              </table>
-              <p style="color:#888;font-size:0.82rem">${isLost ? 'We will help you find it.' : 'Thank you for your honesty!'}</p>
-            </div>
-          </div>`,
-          attachments
-        );
+
+        sendMail(user.email, isLost ? "Lost Item Report Submitted" : "Found Item Submitted",
+          `Hello ${user.name},
+
+Your ${isLost ? "lost item report" : "found item report"} has been submitted.
+
+Item: ${item_name}
+Description: ${description}
+Location: ${location || "Not specified"}
+
+- Smart Stay`, attachments, item.status);
+
+        sendMail(ADMIN_EMAIL, "Lost/Found Report",
+          `User: ${user.name}
+Email: ${user.email}
+Type: ${type}
+Item: ${item_name}
+Location: ${location}
+Description: ${description}
+
+- Smart Stay`, attachments, item.status);
+
+      }
+
+      // Cleanup file after reading to memory for attachment
+      if (req.file) {
+        fs.unlink(req.file.path, err => {
+          if (err) console.error("Error deleting file:", err);
+        });
       }
 
       res.json({ success: true, message: 'Report posted! Confirmation email sent.', id: item._id });
@@ -561,13 +729,13 @@ app.get('/api/admin/stats', requireAuth, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`\n🏨 Smart Stay running at http://localhost:${PORT}`);
   console.log(`👤 Admin: ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
-  console.log(`📧 Mail: ${MAIL_USER}`);
+  console.log(`📧 Mail: ${process.env.EMAIL_USER}`);
   console.log(`🍃 MongoDB: ${MONGO_URI}\n`);
 
   const { exec } = require('child_process');
   const url = `http://localhost:${PORT}`;
   const cmd = process.platform === 'win32' ? `start ${url}`
     : process.platform === 'darwin' ? `open ${url}`
-    : `xdg-open ${url}`;
+      : `xdg-open ${url}`;
   exec(cmd, err => { if (err) console.log(`Open browser manually: ${url}`); });
 });
